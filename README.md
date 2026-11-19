@@ -146,6 +146,145 @@ To build from source, you need Microsoft Visual Studio 2019 or later. For driver
 
 Complete working binaries include: kdu.exe (main executable) and drv64.dll (drivers database). They must reside in the same directory with R/W access enabled for kdu.exe. All binaries MUST be unblocked from the system zone.
 
+# Automated build
+
+`build/build_kdu.py` compiles `Source/KDU.sln` for a selected target platform and collects the result as `kdu.exe` (and `drv64.dll` when present) into `dist/<platform>/`.
+
+## Requirements
+
++ Windows with Visual Studio 2019 or later (C++ workload and MASM).
++ The projects pin `PlatformToolset` to `v145` (Visual Studio 2026). Use Visual Studio 2026 or override the toolset, for example `--toolset v143`.
++ Python 3.9 or later, no third-party packages.
++ MSBuild is located from `--msbuild`, `MSBUILD_EXE_PATH`, `vswhere`, or `PATH`. Running from a Developer Command Prompt always works.
+
+## Usage
+
+```bat
+python build\build_kdu.py --list-platforms
+python build\build_kdu.py
+python build\build_kdu.py --platform windows-x64 --configuration Debug
+python build\build_kdu.py --platform windows-x64 --show-config --dry-run
+python build\build_kdu.py --clean --no-postbuild
+```
+
+Main options:
+
+| Option | Description |
+| --- | --- |
+| `--platform NAME` | Target platform key from the config file. Defaults to `default_platform`. |
+| `--config PATH` | Platform configuration file, default `build/platforms.json`. |
+| `--provider PATH` | Custom Python provider that overrides/extends the platform configuration. |
+| `--configuration NAME` | Override MSBuild configuration (`Release`, `Debug`, ...). |
+| `--msbuild-platform NAME` | Override MSBuild platform (`x64`). |
+| `--toolset NAME` | Override `PlatformToolset`. |
+| `--sdk VERSION` | Override `WindowsTargetPlatformVersion`. |
+| `--dist-dir PATH` | Override the artifact output directory. |
+| `--msbuild PATH` | Explicit path to `MSBuild.exe`. |
+| `--clean` | Rebuild instead of an incremental build. |
+| `--no-postbuild` | Disable `PostBuildEvent` (skips `GenAsIo2Unlock`, so the AsIO2 provider will not work). |
+| `--show-config` | Print the fully resolved platform configuration. |
+| `--dry-run` | Print the resolved configuration and MSBuild command without executing anything. |
+| `--list-platforms` | List platform profiles declared in the config file. |
+
+The build is successful only when every artifact listed in `required_artifacts` is produced. `kdu.exe` is always required; missing optional artifacts (such as `drv64.dll`) only produce a warning.
+
+## Platform configuration
+
+Settings are resolved in this order, with later layers overriding earlier ones:
+
+1. Built-in defaults in `build/platform_config.py`.
+2. `defaults` from the JSON configuration file.
+3. `platforms.<platform>` from the same JSON file.
+4. The object returned by the `--provider` module.
+5. Command line flags (`--configuration`, `--toolset`, `--dist-dir`, ...).
+
+### JSON file schema
+
+`build/platforms.json` has a `default_platform` key, an optional `defaults` object shared by all platforms, and a `platforms` map:
+
+```json
+{
+  "default_platform": "windows-x64",
+  "defaults": {
+    "solution": "Source/KDU.sln",
+    "windows_sdk_version": "10.0",
+    "artifacts": {
+      "kdu.exe": "Source/Hamakaze/output/{msbuild_platform}/{configuration}/kdu.exe",
+      "drv64.dll": "Source/Tanikaze/output/{msbuild_platform}/{configuration}/drv64.dll"
+    },
+    "required_artifacts": ["kdu.exe"],
+    "dist_dir": "dist/{platform}"
+  },
+  "platforms": {
+    "windows-x64": {
+      "description": "Windows x64, Release, MSVC v145",
+      "msbuild_platform": "x64",
+      "configuration": "Release",
+      "platform_toolset": "v145"
+    }
+  }
+}
+```
+
+Per-platform keys:
+
+| Key | Description |
+| --- | --- |
+| `description` | Free-form text shown by `--list-platforms`. |
+| `msbuild_platform` | Value for `/p:Platform`. |
+| `configuration` | Value for `/p:Configuration`. |
+| `platform_toolset` | Value for `/p:PlatformToolset`. `null` keeps the project value. |
+| `windows_sdk_version` | Value for `/p:WindowsTargetPlatformVersion`. `null` keeps the project value. |
+| `solution` | Solution or project passed to MSBuild, relative to the repository root. |
+| `artifacts` | Map of artifact file name to the path (relative to the repository root) where MSBuild produces it. |
+| `required_artifacts` | Artifact names that must exist after the build. All of them must also be present in `artifacts`. |
+| `dist_dir` | Directory where artifacts are collected. |
+| `extra_properties` | Extra MSBuild properties, emitted as `/p:<key>=<value>`. |
+
+Path values (and `dist_dir`) support three placeholders: `{platform}` (the selected profile name), `{msbuild_platform}` and `{configuration}`. This makes it possible to describe any target architecture or configuration, including additional profiles such as `windows-x64-debug`, without touching the build script.
+
+### Provider interface (obtaining platform configuration)
+
+A provider is a Python file passed with `--provider`. It receives the platform name and a context, and returns a partial configuration that is merged over the JSON configuration:
+
+```python
+def get_platform_config(platform: str, context: dict) -> dict:
+    return {
+        "configuration": "Release",
+        "platform_toolset": "v143",
+        "extra_properties": {"RunCodeAnalysis": "false"},
+    }
+```
+
+Alternatively the file can expose a class named `Provider` with the same `get_platform_config(platform, context)` method; this is the formal interface (`PlatformConfigProvider` in `build/platform_config.py`) and is useful when configuration is read from a service, a registry, or a file next to the provider.
+
+The `context` argument contains:
+
+| Key | Description |
+| --- | --- |
+| `repo_root` | Absolute path of the repository root, or `None`. |
+| `platform` | Selected platform name. |
+| `config_path` | Absolute path of the JSON configuration file, or `None`. |
+| `base_config` | Configuration already resolved from the defaults and the JSON file. |
+| `env` | A snapshot of the process environment. |
+
+Returned dictionaries are merged recursively, key by key (`artifacts` and `extra_properties` are extended rather than replaced); every other value replaces the previous one. A provider may also introduce platform names that do not exist in the JSON file. Raising any exception aborts the build with a configuration error.
+
+### Provider demo
+
+`build/examples/env_provider.py` is a complete, minimal example that reads overrides from environment variables (`KDU_MSBUILD_PLATFORM`, `KDU_CONFIGURATION`, `KDU_PLATFORM_TOOLSET`, `KDU_DIST_DIR`, `KDU_EXTRA_PROPERTIES`).
+
+```bat
+REM Use the provider during a real build (here with a dry run)
+set KDU_CONFIGURATION=Debug
+python build\build_kdu.py --provider build\examples\env_provider.py --platform windows-x64 --dry-run
+
+REM Run the provider on its own and print the configuration it resolves
+python build\examples\env_provider.py windows-x64
+```
+
+The same pattern applies to other configuration sources: read them inside `get_platform_config`, then return only the keys that should override the defaults.
+
 # Utils and Notes
 
 GenAsIo2Unlock is a special utility used to generate "unlocking" resources required for working with the AsIO2 driver. Full source of this utility is included in Source\Utils\GenAsIo2Unlock.
