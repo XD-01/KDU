@@ -2,3 +2,6 @@ Source/**/output
 .vs
 Source/Hamakaze/shellstager.lst
 dist/
+__pycache__/
+*.py[cod]
+kdu-build-server/data/

@@ -1,0 +1,36 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8600,
+    "api_token": "change-me",
+    "public_url": "",
+    "max_request_bytes": 65536
+  },
+  "storage": {
+    "data_dir": "data",
+    "keep_builds": 20
+  },
+  "source": {
+    "repo": "hfiref0x/KDU",
+    "ref": "master",
+    "github_token": "",
+    "timeout_seconds": 180,
+    "validate_files": [
+      "Source/KDU.sln",
+      "Source/Hamakaze/KDU.vcxproj"
+    ]
+  },
+  "build": {
+    "msbuild": null,
+    "timeout_seconds": 1800,
+    "workers": 1,
+    "disable_postbuild": false,
+    "platforms_file": "config/platforms.json",
+    "provider": null,
+    "max_extra_properties": 32
+  },
+  "callbacks": {
+    "enabled": true,
+    "timeout_seconds": 10
+  }
+}
