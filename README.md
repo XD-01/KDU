@@ -152,6 +152,16 @@ Complete working binaries include: kdu.exe (main executable) and drv64.dll (driv
 
 Requirements: Windows with Visual Studio (C++ workload, MASM) and Python 3.9 or later. MSBuild is discovered from `--msbuild`, `MSBUILD_EXE_PATH`, `vswhere`, or `PATH`.
 
+On Windows, **double-click `build\build_kdu.bat`** for a one-click build. It locates Python (`py -3` or `python`), builds the default `windows-x64` Release profile, prints the result, and keeps the console window open. Arguments are forwarded, so it can also be used from a terminal:
+
+```bat
+build\build_kdu.bat
+build\build_kdu.bat --platform windows-x64-debug
+build\build_kdu.bat --platform windows-x64 --toolset v143
+```
+
+Equivalent direct invocation:
+
 ```bat
 python build\build_kdu.py --list-platforms
 python build\build_kdu.py
