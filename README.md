@@ -146,6 +146,22 @@ To build from source, you need Microsoft Visual Studio 2019 or later. For driver
 
 Complete working binaries include: kdu.exe (main executable) and drv64.dll (drivers database). They must reside in the same directory with R/W access enabled for kdu.exe. All binaries MUST be unblocked from the system zone.
 
+# Local one-click build
+
+`build/build_kdu.py` is a standalone local build script, independent of the server in `kdu-build-server/`. It builds the source tree in this repository (no download), resolves a platform profile from `build/platforms.json`, runs MSBuild and copies `kdu.exe` (and `drv64.dll` when present) to `dist/<platform>/`.
+
+Requirements: Windows with Visual Studio (C++ workload, MASM) and Python 3.9 or later. MSBuild is discovered from `--msbuild`, `MSBUILD_EXE_PATH`, `vswhere`, or `PATH`.
+
+```bat
+python build\build_kdu.py --list-platforms
+python build\build_kdu.py
+python build\build_kdu.py --platform windows-x64 --configuration Debug
+python build\build_kdu.py --platform windows-x64 --show-config --dry-run
+python build\build_kdu.py --clean --no-postbuild
+```
+
+Platform profiles live in `build/platforms.json`. Paths support `{platform}`, `{msbuild_platform}` and `{configuration}` placeholders. A custom configuration source can be plugged in through `build/platform_config.py`; see `build/examples/env_provider.py` for a working demo (`--provider`). Use `--toolset v143` (or another installed toolset) when the pinned `v145` toolset is not available.
+
 # Automated build service
 
 A deployable, long-running build service lives in [kdu-build-server](kdu-build-server/). It:
