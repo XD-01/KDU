@@ -937,7 +937,7 @@ VOID KDUIntroBanner()
         KDU_VERSION_BUILD,
         KDU_COPYRIGHT_YEAR,
         __TIMESTAMP__,
-        ntHeaders->OptionalHeader.CheckSum);
+        (ntHeaders != NULL) ? ntHeaders->OptionalHeader.CheckSum : 0UL);
 }
 
 /*
@@ -975,6 +975,17 @@ UINT KDUCheckAnotherInstance()
         return ERROR_ALREADY_EXISTS;
     }
 
+    if (!NT_SUCCESS(status)) {
+        supPrintfEvent(kduEventError,
+            "[!] Cannot create instance mutant, NTSTATUS (0x%lX)\r\n",
+            (ULONG)status);
+        return RtlNtStatusToDosError(status);
+    }
+
+    //
+    // Keep the mutant handle open for the process lifetime: it is the marker
+    // used to detect another running instance.
+    //
     return 0;
 }
 

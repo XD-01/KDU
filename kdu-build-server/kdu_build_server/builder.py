@@ -6,6 +6,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import threading
 import time
 import zipfile
 from dataclasses import dataclass, field
@@ -116,6 +117,7 @@ def run_build(
     disable_postbuild: bool,
     source_sha: str,
     logger,
+    cancel_event: threading.Event | None = None,
 ) -> BuildOutcome:
     values = {
         "platform": config["platform"],
@@ -148,14 +150,23 @@ def run_build(
             raise BuildError(f"failed to start MSBuild: {exc}") from exc
 
         try:
-            return_code = process.wait(timeout=timeout_seconds)
+            return_code = _wait_for_process(process, timeout_seconds, cancel_event)
         except subprocess.TimeoutExpired:
             _terminate(process)
             log_handle.write(b"\nBUILD TIMED OUT\n")
             log_handle.flush()
             raise BuildError(f"MSBuild timed out after {timeout_seconds} seconds")
+        except BuildError:
+            _terminate(process)
+            log_handle.write(b"\nBUILD CANCELLED\n")
+            log_handle.flush()
+            raise
 
     duration = time.monotonic() - started
+    if cancel_event is not None and cancel_event.is_set():
+        with log_path.open("ab") as log_handle:
+            log_handle.write(b"\nBUILD CANCELLED\n")
+        raise BuildError("service is shutting down")
     if return_code != 0:
         tail = _tail(log_path)
         raise BuildError(
@@ -244,6 +255,25 @@ def _expand_relative(
     if candidate != root_resolved and root_resolved not in candidate.parents:
         raise PlatformConfigError(f"{field}: path escapes the source tree: {template}")
     return candidate
+
+
+def _wait_for_process(
+    process: subprocess.Popen,
+    timeout_seconds: int,
+    cancel_event: threading.Event | None,
+) -> int:
+    """Wait for MSBuild, honoring the timeout and a service shutdown event."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            raise BuildError("service is shutting down")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(process.args, timeout_seconds)
+        try:
+            return process.wait(timeout=min(0.5, remaining))
+        except subprocess.TimeoutExpired:
+            continue
 
 
 def _terminate(process: subprocess.Popen) -> None:

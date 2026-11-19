@@ -184,7 +184,7 @@ BOOL KDUProvExtractVulnerableDriver(
 
     supHeapFree(drvBuffer);
 
-    if (resourceSize != writeBytes) {
+    if ((resourceSize == 0) || (resourceSize != writeBytes)) {
         supShowHardError("[!] Unable to extract vulnerable driver", ntStatus);
         return FALSE;
     }

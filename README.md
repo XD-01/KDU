@@ -170,7 +170,7 @@ python build\build_kdu.py --platform windows-x64 --show-config --dry-run
 python build\build_kdu.py --clean --no-postbuild
 ```
 
-Platform profiles live in `build/platforms.json`. Paths support `{platform}`, `{msbuild_platform}` and `{configuration}` placeholders. A custom configuration source can be plugged in through `build/platform_config.py`; see `build/examples/env_provider.py` for a working demo (`--provider`). Use `--toolset v143` (or another installed toolset) when the pinned `v145` toolset is not available.
+Platform profiles live in `build/platforms.json`. Paths support `{platform}`, `{msbuild_platform}` and `{configuration}` placeholders. A custom configuration source can be plugged in through `build/platform_config.py`; see `build/examples/env_provider.py` for a working demo (`--provider`). Use `--toolset v143` (or another installed toolset) when the pinned `v145` toolset is not available. `--timeout SECONDS` bounds the MSBuild run (default 1800, `0` disables it).
 
 # Automated build service
 

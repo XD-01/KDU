@@ -269,7 +269,6 @@
     <ClInclude Include="ps.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="sup.h" />
-    <ClInclude Include="tests.h" />
     <ClInclude Include="victim.h" />
   </ItemGroup>
   <ItemGroup>

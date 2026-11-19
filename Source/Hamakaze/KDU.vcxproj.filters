@@ -392,9 +392,6 @@
     <ClInclude Include="..\Shared\ntos\ntalpc.h">
       <Filter>ntos</Filter>
     </ClInclude>
-    <ClInclude Include="tests.h">
-      <Filter>minirtl</Filter>
-    </ClInclude>
     <ClInclude Include="..\Shared\ntos\ntsup.h">
       <Filter>ntos</Filter>
     </ClInclude>

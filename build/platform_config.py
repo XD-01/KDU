@@ -27,8 +27,9 @@ import json
 import os
 import sys
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 class PlatformConfigError(RuntimeError):
@@ -144,7 +145,7 @@ def load_provider(provider_path: str | os.PathLike[str]) -> Callable[[str, dict[
     sys.modules[module_name] = module
     try:
         spec.loader.exec_module(module)
-    except Exception as exc:  # noqa: BLE001 - surface provider errors to the user
+    except Exception as exc:
         sys.modules.pop(module_name, None)
         raise PlatformConfigError(f"Failed to load provider {path}: {exc}") from exc
 
@@ -152,7 +153,7 @@ def load_provider(provider_path: str | os.PathLike[str]) -> Callable[[str, dict[
     if provider_class is not None:
         try:
             provider = provider_class()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise PlatformConfigError(f"Failed to instantiate Provider from {path}: {exc}") from exc
         getter = getattr(provider, "get_platform_config", None)
     else:

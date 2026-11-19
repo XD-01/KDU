@@ -856,6 +856,15 @@ BOOL KDUControlDSE2(
         return FALSE;
     }
 
+    if (victimDeviceHandle == NULL) {
+
+        supPrintfEvent(kduEventError,
+            "[!] Victim driver loaded but the device handle could not be opened, abort\r\n");
+
+        VpRelease(victimProv, &victimDeviceHandle);
+        return FALSE;
+    }
+
     printf_s("[+] Victim is accepted, handle 0x%p\r\n", victimDeviceHandle);
 
     RtlSecureZeroMemory(&vi, sizeof(vi));

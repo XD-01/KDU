@@ -26,7 +26,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from platform_config import (  # noqa: E402  (path bootstrap must run first)
+from platform_config import (
     PlatformConfigError,
     list_platforms,
     resolve_platform_config,
@@ -62,6 +62,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sdk", help="Override WindowsTargetPlatformVersion.")
     parser.add_argument("--dist-dir", help="Override the artifact output directory.")
     parser.add_argument("--msbuild", help="Explicit path to MSBuild.exe.")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=1800,
+        help="MSBuild timeout in seconds (0 disables the timeout).",
+    )
     parser.add_argument("--clean", action="store_true", help="Rebuild instead of incremental build.")
     parser.add_argument(
         "--no-postbuild",
@@ -211,6 +217,10 @@ def collect_artifacts(config: dict[str, Any], dist_dir: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    if args.timeout < 0:
+        print("[build] error: --timeout must be >= 0", file=sys.stderr)
+        return EXIT_CONFIG_ERROR
+
     if args.list_platforms:
         try:
             platforms = list_platforms(args.config)
@@ -250,8 +260,11 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_CONFIG_ERROR
 
     if args.show_config:
-        printable = {key: value for key, value in config.items() if not key.startswith("_")}
-        print(json.dumps(printable, indent=2, sort_keys=True))
+        print(json.dumps(config, indent=2, sort_keys=True))
+
+    if args.msbuild and not Path(args.msbuild).is_file():
+        print(f"[build] error: MSBuild not found: {args.msbuild}", file=sys.stderr)
+        return EXIT_TOOLCHAIN_ERROR
 
     msbuild = find_msbuild(args.msbuild)
     if msbuild is None:
@@ -283,7 +296,18 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[build] running: {display}")
     try:
-        completed = subprocess.run(command, cwd=str(REPO_ROOT), check=False)
+        completed = subprocess.run(
+            command,
+            cwd=str(REPO_ROOT),
+            check=False,
+            timeout=args.timeout if args.timeout > 0 else None,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"[build] error: MSBuild timed out after {args.timeout} seconds",
+            file=sys.stderr,
+        )
+        return EXIT_BUILD_ERROR
     except OSError as exc:
         print(f"[build] error: failed to start MSBuild: {exc}", file=sys.stderr)
         return EXIT_TOOLCHAIN_ERROR

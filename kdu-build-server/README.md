@@ -60,6 +60,8 @@ kdu-build-server/
    python -m kdu_build_server --config config\service.json check
    ```
 
+   该命令会逐个解析平台配置和 provider，发现问题时以非 0 退出，并在输出的 `errors` 中给出原因。
+
 3. 启动服务：
 
    ```bat
@@ -89,6 +91,14 @@ kdu-build-server/
    GET /api/v1/builds/<job-id>/artifact
    GET /api/v1/builds/<job-id>/artifact?file=kdu.exe
    ```
+
+## 测试
+
+服务自带基于标准库 `unittest` 的核心测试（配置合并、请求校验、源码状态/解压安全、任务持久化）：
+
+```bat
+python -m unittest discover -s tests -v
+```
 
 ## 常用命令
 
@@ -156,6 +166,8 @@ KDU_PLATFORMS_FILE, KDU_PROVIDER
 4. 校验 `source.validate_files` 中的文件是否存在。
 5. 原子切换到 `data/source/releases/<sha>`，写入 `state.json`，然后删除其他版本和临时文件。
 6. 构建 worker 在更新锁内把当前源码复制到 `data/builds/<job-id>/source` 后再编译，因此更新不会影响正在进行的构建。
+
+下载的压缩包会校验条目数和解压后总大小，避免异常归档耗尽磁盘；`state.json` 与当前 `source.repo`/`source.ref` 不匹配时会强制重新下载，不会复用其他仓库的源码树。
 
 磁盘上只保留一个源码版本。下载失败时旧版本不会被删除；已有缓存的情况下，构建会记录告警并继续使用旧版本，保证服务长期可用。
 
@@ -235,6 +247,7 @@ queued -> running -> succeeded
 
 - 提交时即校验请求字段、平台名和平台配置，非法请求直接返回 4xx，不进入队列。
 - 服务启动时，数据库中 `running` 状态的任务会被标记为失败（错误信息为服务重启），`queued` 任务会重新入队。
+- 服务停止时会终止正在运行的 MSBuild 进程树，并将对应任务标记为失败；等待中的任务保留在数据库中，下次启动继续执行。
 - 构建超时或 MSBuild 返回非 0 都会记录 `build.log`，并通过任务详情和回调返回错误摘要。
 - 任务成功后会生成 zip 包，保留最近 `storage.keep_builds` 个已结束任务。
 

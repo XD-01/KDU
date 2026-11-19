@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 class SettingsError(RuntimeError):
@@ -263,6 +264,12 @@ def validate_settings(settings: ServiceSettings) -> None:
         raise SettingsError("server.port must be between 1 and 65535")
     if settings.server.max_request_bytes < 1024:
         raise SettingsError("server.max_request_bytes must be at least 1024")
+    if settings.server.public_url:
+        parsed = urlsplit(settings.server.public_url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise SettingsError(
+                "server.public_url must be an absolute http:// or https:// URL"
+            )
     if settings.storage.keep_builds < 1:
         raise SettingsError("storage.keep_builds must be at least 1")
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", settings.source.repo):

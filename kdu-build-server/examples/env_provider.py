@@ -30,7 +30,7 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
-from kdu_build_server.platform_config import (  # noqa: E402
+from kdu_build_server.platform_config import (
     PlatformConfigProvider,
     default_platform,
     resolve_platform_config,

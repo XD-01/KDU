@@ -52,18 +52,19 @@ def _handler_factory(service: BuildService, settings: ServiceSettings):
     class Handler(BaseHTTPRequestHandler):
         server_version = f"{SERVICE_NAME}/{__version__}"
         protocol_version = "HTTP/1.1"
+        timeout = 60
 
         # ------------------------------------------------------------ routing
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             self._handle("GET")
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             self._handle("POST")
 
-        def do_PUT(self) -> None:  # noqa: N802
+        def do_PUT(self) -> None:
             self._method_not_allowed("GET, POST")
 
-        def do_DELETE(self) -> None:  # noqa: N802
+        def do_DELETE(self) -> None:
             self._method_not_allowed("GET, POST")
 
         def log_message(self, fmt: str, *args: Any) -> None:
@@ -103,7 +104,7 @@ def _handler_factory(service: BuildService, settings: ServiceSettings):
                 status = 502
                 logger.warning("source error: %s", exc)
                 self._send_error(502, "source_unavailable", str(exc))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("unhandled API error")
                 self._send_error(500, "internal_error", "Internal server error")
             finally:
@@ -225,7 +226,8 @@ def _handler_factory(service: BuildService, settings: ServiceSettings):
 
         def _read_json(self) -> Any:
             content_type = self.headers.get("Content-Type", "")
-            if content_type and not content_type.lower().startswith("application/json"):
+            media_type = content_type.split(";", 1)[0].strip().lower()
+            if content_type and media_type != "application/json":
                 raise ApiError(415, "unsupported_media_type", "Content-Type must be application/json")
             length_header = self.headers.get("Content-Length")
             if length_header is None:
@@ -288,8 +290,9 @@ def _handler_factory(service: BuildService, settings: ServiceSettings):
             self.send_header("Connection", "close")
             self.send_header("X-Content-Type-Options", "nosniff")
             if download_name:
+                safe_name = download_name.replace('"', "_").replace("\\", "_")
                 self.send_header(
-                    "Content-Disposition", f'attachment; filename="{download_name}"'
+                    "Content-Disposition", f'attachment; filename="{safe_name}"'
                 )
             self.end_headers()
             self.close_connection = True
@@ -315,6 +318,7 @@ def _handler_factory(service: BuildService, settings: ServiceSettings):
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Connection", "close")
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "no-store")
             for key, value in (extra_headers or {}).items():
                 self.send_header(key, value)
             self.end_headers()

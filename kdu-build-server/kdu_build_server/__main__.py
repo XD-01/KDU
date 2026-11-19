@@ -85,21 +85,46 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _check(settings) -> int:
-    from .platform_config import platform_summaries
+    from .platform_config import platform_summaries, resolve_platform_config
 
     try:
         platforms = platform_summaries(settings.build.platforms_file)
     except PlatformConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+
+    resolved = []
+    errors = []
+    for entry in platforms:
+        try:
+            config = resolve_platform_config(
+                platform=entry["name"],
+                platforms_file=settings.build.platforms_file,
+                provider=settings.build.provider,
+            )
+            resolved.append(
+                {
+                    "name": entry["name"],
+                    "configuration": config["configuration"],
+                    "msbuild_platform": config["msbuild_platform"],
+                    "platform_toolset": config.get("platform_toolset"),
+                    "artifacts": sorted(config["artifacts"]),
+                    "required_artifacts": config["required_artifacts"],
+                }
+            )
+        except (PlatformConfigError, ValueError) as exc:
+            errors.append({"platform": entry["name"], "error": str(exc)})
+
     output = {
         "settings": settings.describe(),
         "platforms": platforms,
+        "resolved_platforms": resolved,
+        "errors": errors,
     }
     source = SourceManager(settings.source, Path(settings.storage.data_dir), logging.getLogger("check"))
     output["source_current"] = source.current()
     print(json.dumps(output, indent=2, sort_keys=True))
-    return 0
+    return 2 if errors else 0
 
 
 def _sync_source(settings, force: bool, logger) -> int:
@@ -128,9 +153,11 @@ def _serve(settings, logger) -> int:
         return 4
 
     stop_event = threading.Event()
+    assert service is not None
 
-    def handle_signal(signum, frame) -> None:  # noqa: ANN001
+    def handle_signal(signum, frame) -> None:
         logger.info("received signal %s, shutting down", signum)
+        service.request_stop()
         stop_event.set()
 
     for signal_name in ("SIGINT", "SIGTERM", "SIGBREAK"):

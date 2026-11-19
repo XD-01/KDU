@@ -24,7 +24,7 @@ from .platform_config import (
     resolve_platform_config,
 )
 from .settings import ServiceSettings
-from .source import SourceError, SourceManager
+from .source import SourceManager
 
 
 class BuildService:
@@ -72,12 +72,23 @@ class BuildService:
 
         threading.Thread(target=self._startup_source_sync, name="source-sync", daemon=True).start()
 
+    def request_stop(self) -> None:
+        """Signal workers to stop; running MSBuild processes are terminated."""
+        self._stop.set()
+
     def stop(self) -> None:
         self._stop.set()
         for _ in self._workers:
             self.queue.put(None)
         for worker in self._workers:
             worker.join(timeout=10)
+        alive = [worker.name for worker in self._workers if worker.is_alive()]
+        if alive:
+            # A build should be terminated by the cancel event within a second.
+            # If a worker is still alive, leave the database open so it cannot
+            # fail while writing its final job state during process shutdown.
+            self.logger.warning("workers still running during shutdown: %s", ", ".join(alive))
+            return
         self.store.close()
 
     # ------------------------------------------------------------------- API
@@ -104,14 +115,11 @@ class BuildService:
         return {"changed": changed, "source": state}
 
     def submit(self, payload: Any) -> dict[str, Any]:
-        try:
-            request = parse_build_request(
-                payload,
-                default_platform_name=self._default_platform,
-                max_extra_properties=self.settings.build.max_extra_properties,
-            )
-        except BuildRequestError:
-            raise
+        request = parse_build_request(
+            payload,
+            default_platform_name=self._default_platform,
+            max_extra_properties=self.settings.build.max_extra_properties,
+        )
 
         if request["callback_url"] and not self.settings.callbacks.enabled:
             raise BuildRequestError("Callbacks are disabled on this service")
@@ -150,7 +158,7 @@ class BuildService:
                 return
             try:
                 self._process(job_id)
-            except Exception:  # noqa: BLE001 - never let a worker die
+            except Exception:
                 self.logger.exception("unhandled error while processing job %s", job_id)
 
     def _process(self, job_id: str) -> None:
@@ -206,6 +214,7 @@ class BuildService:
                 disable_postbuild=self.settings.build.disable_postbuild,
                 source_sha=source_sha,
                 logger=self.logger,
+                cancel_event=self._stop,
             )
             result = outcome.to_result(config["platform"], source_sha)
             result["configuration"] = config["configuration"]
@@ -225,7 +234,7 @@ class BuildService:
                 "job %s succeeded (%s)", job_id, ", ".join(item["name"] for item in result["artifacts"])
             )
             self._notify(job_id)
-        except Exception as exc:  # noqa: BLE001 - record all failures on the job
+        except Exception as exc:
             self.logger.exception("job %s failed", job_id)
             self.store.mark_failed(job_id, str(exc), log_path=log_path)
             self._notify(job_id)
@@ -235,7 +244,7 @@ class BuildService:
     def _prune(self) -> None:
         try:
             removed = self.store.prune(self.settings.storage.keep_builds)
-        except Exception:  # noqa: BLE001
+        except Exception:
             self.logger.exception("failed to prune old jobs")
             return
         for job_id in removed:
@@ -283,7 +292,7 @@ class BuildService:
                 state.get("sha"),
                 " (updated)" if changed else "",
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             self.logger.exception("startup source check failed")
 
 

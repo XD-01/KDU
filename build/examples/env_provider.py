@@ -36,7 +36,10 @@ BUILD_DIR = Path(__file__).resolve().parents[1]
 if str(BUILD_DIR) not in sys.path:
     sys.path.insert(0, str(BUILD_DIR))
 
-from platform_config import PlatformConfigProvider, resolve_platform_config  # noqa: E402
+from platform_config import (
+    PlatformConfigProvider,
+    resolve_platform_config,
+)
 
 
 class EnvPlatformProvider(PlatformConfigProvider):

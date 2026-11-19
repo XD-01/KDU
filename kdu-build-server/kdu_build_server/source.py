@@ -44,6 +44,8 @@ from .settings import SourceSettings
 STATE_FILE = "state.json"
 LOCK_FILE = "update.lock"
 IGNORED_COPY_NAMES = ("output", ".vs", "__pycache__")
+MAX_ARCHIVE_ENTRIES = 20000
+MAX_EXTRACTED_BYTES = 512 * 1024 * 1024
 
 
 class SourceError(RuntimeError):
@@ -59,7 +61,7 @@ class FileLock:
         self._stale_after = stale_after
         self._held = False
 
-    def __enter__(self) -> "FileLock":
+    def __enter__(self) -> FileLock:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         deadline = time.monotonic() + self._timeout
         while True:
@@ -89,7 +91,7 @@ class FileLock:
             self._held = True
             return self
 
-    def __exit__(self, exc_type, exc, traceback) -> None:  # noqa: ANN001
+    def __exit__(self, exc_type, exc, traceback) -> None:
         if self._held:
             try:
                 self._path.unlink()
@@ -127,6 +129,9 @@ class SourceManager:
             self._logger.warning("ignoring unreadable source state: %s", exc)
             return None
         if not isinstance(state, dict):
+            return None
+        if state.get("repo") != self._settings.repo or state.get("ref") != self._settings.ref:
+            # The service was reconfigured: never reuse a tree from another repo/ref.
             return None
         sha = state.get("sha")
         if not isinstance(sha, str) or not self.release_path(sha).is_dir():
@@ -373,6 +378,15 @@ class SourceManager:
             members = [item for item in bundle.infolist() if item.filename.strip("/")]
             if not members:
                 raise SourceError("source archive is empty")
+            if len(members) > MAX_ARCHIVE_ENTRIES:
+                raise SourceError(
+                    f"source archive contains too many entries ({len(members)})"
+                )
+            total_size = sum(item.file_size for item in members)
+            if total_size > MAX_EXTRACTED_BYTES:
+                raise SourceError(
+                    f"source archive expands to {total_size} bytes, refusing to extract"
+                )
             top_levels = {Path(item.filename).parts[0] for item in members}
             top = next(iter(top_levels)) if len(top_levels) == 1 else None
 
